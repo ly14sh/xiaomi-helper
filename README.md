@@ -36,7 +36,7 @@ app/
 │   │   ├── MainActivity.java      # 主界面
 │   │   └── PDFImageView.java      # 自定义PDF显示组件
 │   └── assets/
-│       └── guide.pdf              # PDF文件
+│       └── guide.pdf              # PDF文件（请自行添加）
 └── build.gradle
 ```
 
@@ -49,6 +49,10 @@ app/
 ## 安装
 
 构建后APK位于: `app/build/outputs/apk/debug/app-debug.apk`
+
+## 添加PDF文件
+
+请将 `guide.pdf` 文件添加到 `app/src/main/assets/` 目录
 
 ## License
 
