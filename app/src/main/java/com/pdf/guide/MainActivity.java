@@ -5,6 +5,8 @@ import android.app.AlertDialog;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Matrix;
+import android.graphics.Paint;
 import android.graphics.pdf.PdfRenderer;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
@@ -52,7 +54,7 @@ public class MainActivity extends Activity {
     private RelativeLayout topBar;
     private LinearLayout bottomBar;
     private FrameLayout contentContainer;
-    private PDFImageView pdfImageView;
+    private PageTurnView pageTurnView;
     private TextView pageText;
     private LinearLayout pageIndicator;
     private Button prevBtn;
@@ -63,6 +65,9 @@ public class MainActivity extends Activity {
     private boolean barsVisible = true;
     private List<String> tocItems = new ArrayList<>();
     private int[] tocPages;
+    
+    private Bitmap[] pageCache = new Bitmap[3]; // prev, current, next
+    private static final int CACHE_SIZE = 3;
     
     private int screenWidth;
     private int screenHeight;
@@ -135,31 +140,46 @@ public class MainActivity extends Activity {
         ));
         container.setBackgroundColor(Color.parseColor(MIUI_GRAY_LIGHT));
         
-        pdfImageView = new PDFImageView(this);
-        pdfImageView.setLayoutParams(new FrameLayout.LayoutParams(
+        pageTurnView = new PageTurnView(this);
+        pageTurnView.setLayoutParams(new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         ));
-        pdfImageView.setBackgroundColor(Color.parseColor(MIUI_WHITE));
+        pageTurnView.setBackgroundColor(Color.parseColor(MIUI_WHITE));
         
-        pdfImageView.setOnTapListener(new PDFImageView.OnTapListener() {
+        pageTurnView.setOnPageTurnListener(new PageTurnView.OnPageTurnListener() {
             @Override
-            public void onLeftTap() {
-                goToPrevPage();
+            public void onNextPage() {
+                if (currentPage < pageCount - 1) {
+                    currentPage++;
+                    updatePageCache();
+                    updateNavButtons();
+                    updatePageInfo();
+                    scheduleHide();
+                }
             }
             
             @Override
-            public void onRightTap() {
-                goToNextPage();
+            public void onPrevPage() {
+                if (currentPage > 0) {
+                    currentPage--;
+                    updatePageCache();
+                    updateNavButtons();
+                    updatePageInfo();
+                    scheduleHide();
+                }
             }
             
             @Override
-            public void onCenterTap() {
-                toggleBars();
+            public void onPageChanged(int page) {
+                // Not used
             }
         });
         
-        container.addView(pdfImageView);
+        // Touch to show/hide bars
+        pageTurnView.setOnClickListener(v -> toggleBars());
+        
+        container.addView(pageTurnView);
         return container;
     }
     
@@ -577,23 +597,22 @@ public class MainActivity extends Activity {
     private void loadPDF() {
         try {
             File pdfFile = new File(getCacheDir(), "guide.pdf");
+            
+            // If PDF doesn't exist, extract from ZIP in assets
             if (!pdfFile.exists() || pdfFile.length() == 0) {
-                InputStream is = getAssets().open("guide.pdf");
-                OutputStream os = new FileOutputStream(pdfFile);
-                byte[] buffer = new byte[8192];
-                int count;
-                while ((count = is.read(buffer)) != -1) {
-                    os.write(buffer, 0, count);
-                }
-                is.close();
-                os.close();
+                extractFromZip();
             }
             
             fileDescriptor = ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY);
             pdfRenderer = new PdfRenderer(fileDescriptor);
             pageCount = pdfRenderer.getPageCount();
             
-            renderPage(0);
+            // Initialize page cache
+            for (int i = 0; i < CACHE_SIZE; i++) {
+                pageCache[i] = null;
+            }
+            
+            updatePageCache();
             updateNavButtons();
             updatePageInfo();
             
@@ -603,8 +622,50 @@ public class MainActivity extends Activity {
         }
     }
     
-    private void renderPage(int index) {
-        if (pageCount == 0 || index < 0 || index >= pageCount) return;
+    private void extractFromZip() {
+        try {
+            File zipFile = new File(getCacheDir(), "guide.zip");
+            File pdfFile = new File(getCacheDir(), "guide.pdf");
+            
+            // Copy ZIP from assets to cache
+            InputStream is = getAssets().open("guide.zip");
+            OutputStream os = new FileOutputStream(zipFile);
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = is.read(buffer)) != -1) {
+                os.write(buffer, 0, count);
+            }
+            is.close();
+            os.close();
+            
+            // Extract PDF from ZIP using ZipInputStream
+            java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(new java.io.FileInputStream(zipFile));
+            java.util.zip.ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if (entry.getName().endsWith(".pdf")) {
+                    FileOutputStream fos = new FileOutputStream(pdfFile);
+                    byte[] buf = new byte[8192];
+                    int len;
+                    while ((len = zis.read(buf)) != -1) {
+                        fos.write(buf, 0, len);
+                    }
+                    fos.close();
+                    break;
+                }
+            }
+            zis.close();
+            
+            // Delete ZIP file after extraction
+            zipFile.delete();
+            
+        } catch (Exception e) {
+            Toast.makeText(this, "解压PDF失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            e.printStackTrace();
+        }
+    }
+    
+    private Bitmap renderPageSync(int index) {
+        if (index < 0 || index >= pageCount) return null;
         
         try {
             android.graphics.pdf.PdfRenderer.Page page = pdfRenderer.openPage(index);
@@ -626,18 +687,51 @@ public class MainActivity extends Activity {
             page.render(bitmap, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
             page.close();
             
-            pdfImageView.setBitmap(bitmap);
+            return bitmap;
             
         } catch (Exception e) {
-            Toast.makeText(this, "渲染页面失败", Toast.LENGTH_SHORT).show();
             e.printStackTrace();
+            return null;
         }
+    }
+    
+    private void updatePageCache() {
+        // Render pages for page turn effect
+        // pageCache[0] = prev page, [1] = current, [2] = next
+        
+        // Recycle old bitmaps
+        for (int i = 0; i < CACHE_SIZE; i++) {
+            if (pageCache[i] != null) {
+                // Don't recycle immediately, let GC handle it
+            }
+        }
+        
+        // Render current page
+        pageCache[1] = renderPageSync(currentPage);
+        
+        // Render prev page
+        if (currentPage > 0) {
+            pageCache[0] = renderPageSync(currentPage - 1);
+        } else {
+            pageCache[0] = null;
+        }
+        
+        // Render next page
+        if (currentPage < pageCount - 1) {
+            pageCache[2] = renderPageSync(currentPage + 1);
+        } else {
+            pageCache[2] = null;
+        }
+        
+        pageTurnView.setCurrentPage(pageCache[1]);
+        pageTurnView.setPrevPage(pageCache[0]);
+        pageTurnView.setNextPage(pageCache[2]);
     }
     
     private void goToPage(int index) {
         if (index < 0 || index >= pageCount) return;
         currentPage = index;
-        renderPage(currentPage);
+        updatePageCache();
         updateNavButtons();
         updatePageInfo();
     }
@@ -645,7 +739,7 @@ public class MainActivity extends Activity {
     private void goToPrevPage() {
         if (currentPage > 0) {
             currentPage--;
-            renderPage(currentPage);
+            updatePageCache();
             updateNavButtons();
             updatePageInfo();
         }
@@ -654,7 +748,7 @@ public class MainActivity extends Activity {
     private void goToNextPage() {
         if (currentPage < pageCount - 1) {
             currentPage++;
-            renderPage(currentPage);
+            updatePageCache();
             updateNavButtons();
             updatePageInfo();
         }

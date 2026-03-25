@@ -28,13 +28,21 @@ public class PDFImageView extends View {
     private float startX;
     private float startY;
     private boolean isPanning = false;
+    private boolean isScaling = false;
+    private boolean isFirstDraw = true;
     
     private OnTapListener tapListener;
+    private OnSwipeListener swipeListener;
     
     public interface OnTapListener {
         void onLeftTap();
         void onRightTap();
         void onCenterTap();
+    }
+    
+    public interface OnSwipeListener {
+        void onSwipeLeft();
+        void onSwipeRight();
     }
     
     public PDFImageView(Context context) {
@@ -59,8 +67,13 @@ public class PDFImageView extends View {
         this.tapListener = listener;
     }
     
+    public void setOnSwipeListener(OnSwipeListener listener) {
+        this.swipeListener = listener;
+    }
+    
     public void setBitmap(Bitmap bitmap) {
         this.bitmap = bitmap;
+        isFirstDraw = true;
         resetTransform();
         invalidate();
     }
@@ -75,16 +88,17 @@ public class PDFImageView extends View {
     private void fitToScreen() {
         if (bitmap == null) return;
         
-        matrix.reset();
-        
         int viewWidth = getWidth();
         int viewHeight = getHeight();
+        
+        // If view doesn't have dimensions yet, skip for now
+        if (viewWidth == 0 || viewHeight == 0) return;
+        
         int bmpWidth = bitmap.getWidth();
         int bmpHeight = bitmap.getHeight();
         
-        if (viewWidth == 0 || viewHeight == 0) return;
+        matrix.reset();
         
-        // Calculate scale to fit
         float scaleX = (float) viewWidth / bmpWidth;
         float scaleY = (float) viewHeight / bmpHeight;
         float scale = Math.min(scaleX, scaleY);
@@ -92,7 +106,6 @@ public class PDFImageView extends View {
         currentScale = scale;
         minScale = scale;
         
-        // Center the bitmap
         float dx = (viewWidth - bmpWidth * scale) / 2f;
         float dy = (viewHeight - bmpHeight * scale) / 2f;
         
@@ -101,8 +114,25 @@ public class PDFImageView extends View {
     }
     
     @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        // When view size changes, re-fit the bitmap
+        if (bitmap != null) {
+            fitToScreen();
+            invalidate();
+        }
+    }
+    
+    @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
+        
+        // If this is the first draw and view has dimensions, fit to screen
+        if (isFirstDraw && getWidth() > 0 && getHeight() > 0) {
+            isFirstDraw = false;
+            fitToScreen();
+        }
+        
         if (bitmap != null) {
             canvas.drawBitmap(bitmap, matrix, paint);
         }
@@ -121,10 +151,11 @@ public class PDFImageView extends View {
                 startY = event.getY();
                 lastTouchX = startX;
                 lastTouchY = startY;
+                isPanning = false;
                 return true;
                 
             case MotionEvent.ACTION_MOVE:
-                if (currentScale > minScale + 0.01f) {
+                if (!isScaling && currentScale > minScale + 0.01f) {
                     float x = event.getX();
                     float y = event.getY();
                     float dx = x - lastTouchX;
@@ -161,6 +192,12 @@ public class PDFImageView extends View {
     
     private class ScaleListener extends ScaleGestureDetector.SimpleOnScaleGestureListener {
         @Override
+        public boolean onScaleBegin(ScaleGestureDetector detector) {
+            isScaling = true;
+            return true;
+        }
+        
+        @Override
         public boolean onScale(ScaleGestureDetector detector) {
             float focusX = detector.getFocusX();
             float focusY = detector.getFocusY();
@@ -180,6 +217,7 @@ public class PDFImageView extends View {
         
         @Override
         public void onScaleEnd(ScaleGestureDetector detector) {
+            isScaling = false;
             if (currentScale < minScale + 0.01f) {
                 resetTransform();
             }
@@ -190,6 +228,28 @@ public class PDFImageView extends View {
         @Override
         public boolean onDown(MotionEvent e) {
             return true;
+        }
+        
+        @Override
+        public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
+            if (e1 == null || e2 == null) return false;
+            
+            float deltaX = e2.getX() - e1.getX();
+            float deltaY = e2.getY() - e1.getY();
+            
+            // Horizontal swipe
+            if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 100 && Math.abs(velocityX) > 100) {
+                if (deltaX > 0 && swipeListener != null) {
+                    // Swipe right -> previous page
+                    swipeListener.onSwipeRight();
+                    return true;
+                } else if (deltaX < 0 && swipeListener != null) {
+                    // Swipe left -> next page
+                    swipeListener.onSwipeLeft();
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }
