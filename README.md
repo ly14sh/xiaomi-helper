@@ -46,7 +46,7 @@ app/
 ## 下载PDF文件
 
 由于PDF文件较大(61MB)，需要单独下载：
-- 📥 [下载 guide.zip](https://github.com/ly14sh/xiaomi-helper/releases/download/v1.01/guide.zip)
+- 📥 [下载 guide.zip](https://github.com/ly14sh/xiaomi-helper/releases/download/v1.02/guide.zip)
 - 将其放入 `app/src/main/assets/` 目录
 
 ## 构建
