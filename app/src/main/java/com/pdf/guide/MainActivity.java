@@ -172,12 +172,12 @@ public class MainActivity extends Activity {
             
             @Override
             public void onPageChanged(int page) {
-                // Not used
+                // Center tap (-1) to toggle bars
+                if (page == -1) {
+                    toggleBars();
+                }
             }
         });
-        
-        // Touch to show/hide bars
-        pageTurnView.setOnClickListener(v -> toggleBars());
         
         container.addView(pageTurnView);
         return container;

@@ -446,6 +446,40 @@ public class PageTurnView extends View {
         }
         
         @Override
+        public boolean onSingleTapConfirmed(MotionEvent e) {
+            if (isScaling || isAnimating || isDragging) return false;
+            
+            float x = e.getX();
+            float width = getWidth();
+            
+            // Left side -> prev page
+            if (x < width * 0.3f) {
+                if (prevPage != null) {
+                    isForward = false;
+                    touchX = getWidth();
+                    animateTurn();
+                }
+                return true;
+            }
+            // Right side -> next page
+            else if (x > width * 0.7f) {
+                if (nextPage != null) {
+                    isForward = true;
+                    touchX = -getWidth();
+                    animateTurn();
+                }
+                return true;
+            }
+            // Center -> toggle bars
+            else {
+                if (pageTurnListener != null) {
+                    pageTurnListener.onPageChanged(-1); // -1 means center tap
+                }
+                return true;
+            }
+        }
+        
+        @Override
         public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
             if (isScaling || isAnimating || isDragging) return false;
             
