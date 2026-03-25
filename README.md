@@ -14,6 +14,8 @@
 
 ## 操作方式
 
+- **左滑** → 下一页
+- **右滑** → 上一页
 - **左半边点击** → 上一页
 - **右半边点击** → 下一页  
 - **中间点击** → 显示/隐藏工具栏
@@ -24,7 +26,7 @@
 
 - Android Native (Java)
 - PdfRenderer API
-- 自定义PDFImageView实现缩放和拖动
+- 自定义PageTurnView实现滑动翻页
 - Material Design风格
 
 ## 项目结构
@@ -34,11 +36,18 @@ app/
 ├── src/main/
 │   ├── java/com/pdf/guide/
 │   │   ├── MainActivity.java      # 主界面
-│   │   └── PDFImageView.java      # 自定义PDF显示组件
+│   │   ├── PDFImageView.java      # PDF显示组件
+│   │   └── PageTurnView.java      # 翻页动画组件
 │   └── assets/
-│       └── guide.pdf              # PDF文件（请自行添加）
+│       └── guide.zip             # PDF压缩包（首次启动自动解压）
 └── build.gradle
 ```
+
+## 下载PDF文件
+
+由于PDF文件较大(61MB)，需要单独下载：
+- 📥 [下载 guide.zip](https://github.com/ly14sh/xiaomi-helper/releases/download/v1.01/guide.zip)
+- 将其放入 `app/src/main/assets/` 目录
 
 ## 构建
 
@@ -50,9 +59,10 @@ app/
 
 构建后APK位于: `app/build/outputs/apk/debug/app-debug.apk`
 
-## 添加PDF文件
+## 版本历史
 
-请将 `guide.pdf` 文件添加到 `app/src/main/assets/` 目录
+- **v1.01** - 添加页面滑动翻页动画，边缘阴影效果优化
+- **v1.00** - 初始版本，基本阅读功能
 
 ## License
 
