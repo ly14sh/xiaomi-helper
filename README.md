@@ -73,7 +73,7 @@ app/
 
 由于PDF文件较大(61MB)，需要从Releases下载：
 - 📥 [下载 guide.zip](https://github.com/ly14sh/xiaomi-helper/releases/download/v1.02/guide.zip) (位于 v1.02 Release)
-- 将 `guide.zip` 解压后得到 `guide.pdf`，放入 `app/src/main/assets/` 目录
+- 将 `guide.zip` 直接放入 `app/src/main/assets/` 目录（无需解压，应用会自动解压）
 
 **步骤2：构建项目**
 
@@ -82,7 +82,7 @@ app/
 git clone https://github.com/ly14sh/xiaomi-helper.git
 cd xiaomi-helper
 
-# 确保资源文件已放入 app/src/main/assets/guide.pdf
+# 确保 guide.zip 已放入 app/src/main/assets/ 目录
 
 # 构建Debug版本
 ./gradlew assembleDebug
