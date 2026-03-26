@@ -19,10 +19,14 @@ public class PageTurnView extends View {
     private Paint shadowPaint = new Paint();
     
     private float touchX = 0;
-    private float touchY = 0;
     private float startX = 0;
     private float startY = 0;
     private boolean isDragging = false;
+    private boolean isPanning = false;
+    private float lastPanX = 0;
+    private float lastPanY = 0;
+    private float panOffsetX = 0;
+    private float panOffsetY = 0;
     private boolean isAnimating = false;
     private boolean isForward = true; // true = next page, false = prev page
     
@@ -84,11 +88,14 @@ public class PageTurnView extends View {
     public void resetTransform() {
         currentScale = minScale;
         imageMatrix.reset();
+        panOffsetX = 0;
+        panOffsetY = 0;
         if (currentPage != null) {
             fitToCenter();
         }
         touchX = 0;
         isDragging = false;
+        isPanning = false;
         invalidate();
     }
     
@@ -278,8 +285,10 @@ public class PageTurnView extends View {
                 startX = event.getX();
                 startY = event.getY();
                 touchX = 0;
-                touchY = startY;
+                lastPanX = startX;
+                lastPanY = startY;
                 isDragging = false;
+                isPanning = false;
                 getParent().requestDisallowInterceptTouchEvent(true);
                 return true;
                 
@@ -287,24 +296,36 @@ public class PageTurnView extends View {
                 float deltaX = event.getX() - startX;
                 float deltaY = event.getY() - startY;
                 
-                // Start dragging on horizontal movement
+                // If zoomed in, allow panning (no page turn)
+                if (currentScale > minScale + 0.01f) {
+                    if (!isPanning) {
+                        isPanning = true;
+                    }
+                    // Pan the content
+                    float moveX = event.getX() - lastPanX;
+                    float moveY = event.getY() - lastPanY;
+                    panOffsetX += moveX;
+                    panOffsetY += moveY;
+                    imageMatrix.postTranslate(moveX, moveY);
+                    lastPanX = event.getX();
+                    lastPanY = event.getY();
+                    invalidate();
+                    return true;
+                }
+                
+                // Not zoomed - allow page turn
                 if (!isDragging && Math.abs(deltaX) > 15) {
                     if (Math.abs(deltaX) > Math.abs(deltaY)) {
                         isDragging = true;
-                        // deltaX < 0 = swipe left = next page
-                        // deltaX > 0 = swipe right = prev page
                         isForward = deltaX < 0;
                     }
                 }
                 
                 if (isDragging) {
                     touchX = deltaX;
-                    
-                    // Limit drag distance
                     int w = getWidth();
                     float maxDrag = w * 0.4f;
                     touchX = Math.max(-maxDrag, Math.min(maxDrag, touchX));
-                    
                     invalidate();
                 }
                 return true;
@@ -312,6 +333,11 @@ public class PageTurnView extends View {
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
                 getParent().requestDisallowInterceptTouchEvent(false);
+                
+                if (isPanning) {
+                    isPanning = false;
+                    return true;
+                }
                 
                 if (isDragging) {
                     finishDrag();
@@ -348,11 +374,11 @@ public class PageTurnView extends View {
         final float startX = touchX;
         final int w = getWidth();
         final float endX = isForward ? -w : w;
-        final long duration = 300;
+        final long duration = 80; // Very fast
         
         animator = ValueAnimator.ofFloat(0, 1);
         animator.setDuration(duration);
-        animator.setInterpolator(new DecelerateInterpolator(1.5f));
+        animator.setInterpolator(new DecelerateInterpolator(2f));
         animator.addUpdateListener(animation -> {
             float t = (float) animation.getAnimatedValue();
             touchX = startX + (endX - startX) * t;
@@ -381,7 +407,7 @@ public class PageTurnView extends View {
         isAnimating = true;
         final float startX = touchX;
         final float endX = 0;
-        final long duration = 250;
+        final long duration = 80; // Very fast
         
         animator = ValueAnimator.ofFloat(0, 1);
         animator.setDuration(duration);

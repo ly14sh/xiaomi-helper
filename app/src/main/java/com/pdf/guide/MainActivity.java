@@ -22,6 +22,7 @@ import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.RelativeLayout;
@@ -60,6 +61,7 @@ public class MainActivity extends Activity {
     private Button prevBtn;
     private Button nextBtn;
     private ListView tocListView;
+    private CardView tocCard;  // CardView for TOC dialog
     
     private boolean showingTOC = false;
     private boolean barsVisible = true;
@@ -93,18 +95,33 @@ public class MainActivity extends Activity {
     
     private void hideSystemUI() {
         Window window = getWindow();
-        window.setFlags(
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-        );
+        window.setStatusBarColor(Color.TRANSPARENT);
+        window.setNavigationBarColor(Color.TRANSPARENT);
         window.getDecorView().setSystemUiVisibility(
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-            | View.SYSTEM_UI_FLAG_FULLSCREEN
-            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-            | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
             | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            | View.SYSTEM_UI_FLAG_FULLSCREEN  // Hide status bar
+            | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         );
+    }
+    
+    private void showBarsAnimated() {
+        barsVisible = true;
+        topBar.setVisibility(View.VISIBLE);
+        bottomBar.setVisibility(View.VISIBLE);
+        topBar.animate().alpha(1f).setDuration(200).start();
+        bottomBar.animate().alpha(1f).setDuration(200).start();
+        scheduleHide();
+    }
+    
+    private void hideBarsAnimated() {
+        barsVisible = false;
+        topBar.animate().alpha(0f).setDuration(200).withEndAction(() -> {
+            if (!barsVisible) topBar.setVisibility(View.INVISIBLE);
+        }).start();
+        bottomBar.animate().alpha(0f).setDuration(200).withEndAction(() -> {
+            if (!barsVisible) bottomBar.setVisibility(View.INVISIBLE);
+        }).start();
     }
     
     private int dp(float dp) {
@@ -124,8 +141,25 @@ public class MainActivity extends Activity {
         topBar = createTopBar();
         bottomBar = createBottomBar();
         
+        // Create TOC CardView (same style as jump dialog)
+        tocCard = new CardView(this);
+        tocCard.setCardBackgroundColor(Color.parseColor(MIUI_WHITE));
+        tocCard.setCardElevation(dp(16));
+        tocCard.setRadius(dp(20));
+        tocCard.setUseCompatPadding(true);
+        FrameLayout.LayoutParams tocCardParams = new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        tocCardParams.gravity = Gravity.CENTER;
+        tocCardParams.leftMargin = dp(32);
+        tocCardParams.rightMargin = dp(32);
+        tocCard.setLayoutParams(tocCardParams);
+        tocCard.setVisibility(View.GONE);
+        
         rootLayout.addView(contentContainer);
         rootLayout.addView(tocListView);
+        rootLayout.addView(tocCard);  // Add TOC card
         rootLayout.addView(topBar);
         rootLayout.addView(bottomBar);
         
@@ -185,15 +219,64 @@ public class MainActivity extends Activity {
     
     private RelativeLayout createTopBar() {
         RelativeLayout topBar = new RelativeLayout(this);
-        topBar.setBackgroundColor(Color.parseColor(MIUI_BLUE));
         
-        int statusBarHeight = 0;
-        int resourceId = getResources().getIdentifier("status_bar_height", "dimen", "android");
-        if (resourceId > 0) {
-            statusBarHeight = getResources().getDimensionPixelSize(resourceId);
-        }
-        topBar.setPadding(dp(16), statusBarHeight / 2, dp(16), dp(10));
-        topBar.setElevation(dp(4));
+        // Simple gradient background
+        GradientDrawable bgDrawable = new GradientDrawable();
+        bgDrawable.setOrientation(GradientDrawable.Orientation.TOP_BOTTOM);
+        bgDrawable.setColors(new int[]{
+            Color.argb(160, 0, 0, 0),
+            Color.argb(80, 0, 0, 0),
+            Color.TRANSPARENT
+        });
+        topBar.setBackground(bgDrawable);
+        
+        // Content row container - no status bar padding since it's hidden
+        LinearLayout contentRow = new LinearLayout(this);
+        contentRow.setOrientation(LinearLayout.HORIZONTAL);
+        contentRow.setGravity(Gravity.CENTER_VERTICAL);
+        contentRow.setPadding(dp(12), dp(12), 0, dp(12)); // Remove right padding for TOC button
+        RelativeLayout.LayoutParams rowParams = new RelativeLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        rowParams.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+        contentRow.setLayoutParams(rowParams);
+        
+        // Xiaomi Logo
+        ImageView logoView = new ImageView(this);
+        logoView.setImageResource(R.drawable.xiaomi_logo);
+        LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(28), dp(28));
+        logoParams.setMargins(0, 0, dp(36), 0); // More spacing between logo and title
+        logoView.setLayoutParams(logoParams);
+        contentRow.addView(logoView);
+        
+        // Title - centered with weight
+        TextView title = new TextView(this);
+        title.setText("智能手机使用指南");
+        title.setTextColor(Color.parseColor(MIUI_WHITE));
+        title.setTextSize(17);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        title.setShadowLayer(dp(2), 0, dp(1), Color.argb(80, 0, 0, 0));
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        title.setGravity(Gravity.CENTER);
+        title.setLayoutParams(titleParams);
+        contentRow.addView(title);
+        
+        // TOC Button - compact padding, move right
+        Button tocBtn = new Button(this);
+        tocBtn.setText("≡ 目录");
+        tocBtn.setTextSize(15);
+        tocBtn.setTextColor(Color.parseColor(MIUI_WHITE));
+        tocBtn.setAllCaps(false);
+        tocBtn.setBackgroundColor(Color.TRANSPARENT);
+        tocBtn.setPadding(dp(4), dp(4), dp(4), dp(4)); // Smaller padding
+        tocBtn.setOnClickListener(v -> toggleTOC());
+        LinearLayout.LayoutParams tocParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        tocParams.setMargins(0, 0, dp(-8), 0); // Move right closer to edge
+        tocBtn.setLayoutParams(tocParams);
+        contentRow.addView(tocBtn);
+        
+        topBar.addView(contentRow);
         
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -202,45 +285,27 @@ public class MainActivity extends Activity {
         params.gravity = Gravity.TOP;
         topBar.setLayoutParams(params);
         
-        TextView title = new TextView(this);
-        title.setText("智能手机使用指南");
-        title.setTextColor(Color.parseColor(MIUI_WHITE));
-        title.setTextSize(18);
-        title.setTypeface(null, android.graphics.Typeface.BOLD);
-        RelativeLayout.LayoutParams titleParams = new RelativeLayout.LayoutParams(
-            RelativeLayout.LayoutParams.WRAP_CONTENT,
-            RelativeLayout.LayoutParams.WRAP_CONTENT
-        );
-        titleParams.addRule(RelativeLayout.CENTER_IN_PARENT);
-        title.setLayoutParams(titleParams);
-        topBar.addView(title);
-        
-        Button tocBtn = createTopButton("目录", MIUI_ORANGE);
-        tocBtn.setOnClickListener(v -> toggleTOC());
-        RelativeLayout.LayoutParams tocParams = new RelativeLayout.LayoutParams(
-            RelativeLayout.LayoutParams.WRAP_CONTENT,
-            RelativeLayout.LayoutParams.WRAP_CONTENT
-        );
-        tocParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
-        tocParams.addRule(RelativeLayout.CENTER_VERTICAL);
-        tocBtn.setLayoutParams(tocParams);
-        topBar.addView(tocBtn);
-        
         return topBar;
     }
     
-    private Button createTopButton(String text, String bgColor) {
+    private Button createModernButton(String text) {
         Button btn = new Button(this);
         btn.setText(text);
-        btn.setTextSize(14);
+        btn.setTextSize(13);
         btn.setTextColor(Color.parseColor(MIUI_WHITE));
         btn.setAllCaps(false);
         
+        // Modern glassmorphism style
         GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(Color.parseColor(bgColor));
-        drawable.setCornerRadius(dp(6));
+        drawable.setOrientation(GradientDrawable.Orientation.LEFT_RIGHT);
+        drawable.setCornerRadius(dp(20));
+        drawable.setColor(Color.argb(60, 255, 255, 255)); // Semi-transparent white
+        drawable.setStroke(dp(1), Color.argb(40, 255, 255, 255)); // Subtle border
         btn.setBackground(drawable);
-        btn.setPadding(dp(16), dp(6), dp(16), dp(6));
+        btn.setPadding(dp(14), dp(6), dp(14), dp(6));
+        
+        // Shadow
+        btn.setShadowLayer(dp(4), 0, dp(2), Color.argb(40, 0, 0, 0));
         
         return btn;
     }
@@ -248,9 +313,21 @@ public class MainActivity extends Activity {
     private LinearLayout createBottomBar() {
         LinearLayout bottomBar = new LinearLayout(this);
         bottomBar.setOrientation(LinearLayout.HORIZONTAL);
-        bottomBar.setBackgroundColor(Color.parseColor(MIUI_WHITE));
-        bottomBar.setPadding(dp(12), dp(10), dp(12), dp(10) + dp(8));
-        bottomBar.setElevation(dp(6));
+        
+        // Simple glassmorphism background
+        GradientDrawable bgDrawable = new GradientDrawable();
+        bgDrawable.setOrientation(GradientDrawable.Orientation.BOTTOM_TOP);
+        bgDrawable.setColors(new int[]{
+            Color.argb(220, 255, 255, 255),  // White at bottom
+            Color.argb(180, 255, 255, 255)   // Slightly transparent at top
+        });
+        bgDrawable.setCornerRadii(new float[]{
+            0, 0, 0, 0, dp(24), dp(24), dp(24), dp(24)
+        });
+        bottomBar.setBackground(bgDrawable);
+        
+        bottomBar.setPadding(dp(8), dp(6), dp(8), dp(6) + dp(4));
+        bottomBar.setElevation(0);
         
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -259,22 +336,34 @@ public class MainActivity extends Activity {
         params.gravity = Gravity.BOTTOM;
         bottomBar.setLayoutParams(params);
         
-        prevBtn = createNavButton("上一页");
+        // Previous Button
+        prevBtn = createPageButton("◀ 上一页", true);
         prevBtn.setOnClickListener(v -> {
             goToPrevPage();
             scheduleHide();
         });
         LinearLayout.LayoutParams prevParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        prevParams.setMargins(0, 0, dp(32), 0); // 32dp right margin
         prevBtn.setLayoutParams(prevParams);
         
+        // Page Indicator
         pageIndicator = new LinearLayout(this);
         pageIndicator.setOrientation(LinearLayout.VERTICAL);
         pageIndicator.setGravity(Gravity.CENTER);
         pageIndicator.setClickable(true);
         pageIndicator.setFocusable(true);
-        pageIndicator.setBackgroundColor(Color.TRANSPARENT);
-        pageIndicator.setPadding(dp(16), dp(6), dp(16), dp(6));
-        LinearLayout.LayoutParams indicatorParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.5f);
+        pageIndicator.setPadding(dp(12), dp(6), dp(12), dp(6));
+        
+        GradientDrawable indicatorBg = new GradientDrawable();
+        indicatorBg.setCornerRadius(dp(12));
+        indicatorBg.setColor(Color.parseColor(MIUI_GRAY_LIGHT));
+        pageIndicator.setBackground(indicatorBg);
+        
+        LinearLayout.LayoutParams indicatorParams = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        indicatorParams.setMargins(dp(16), 0, dp(16), 0); // 32dp total spacing
         pageIndicator.setLayoutParams(indicatorParams);
         
         pageText = new TextView(this);
@@ -294,12 +383,14 @@ public class MainActivity extends Activity {
         pageIndicator.addView(tapHint);
         pageIndicator.setOnClickListener(v -> showJumpDialog());
         
-        nextBtn = createNavButton("下一页");
+        // Next Button
+        nextBtn = createPageButton("下一页 ▶", false);
         nextBtn.setOnClickListener(v -> {
             goToNextPage();
             scheduleHide();
         });
         LinearLayout.LayoutParams nextParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        nextParams.setMargins(dp(32), 0, 0, 0); // 32dp left margin
         nextBtn.setLayoutParams(nextParams);
         
         bottomBar.addView(prevBtn);
@@ -307,6 +398,38 @@ public class MainActivity extends Activity {
         bottomBar.addView(nextBtn);
         
         return bottomBar;
+    }
+    
+    private Button createPageButton(String text, boolean isPrev) {
+        Button btn = new Button(this);
+        btn.setText(text);
+        btn.setTextSize(14); // Larger text
+        btn.setAllCaps(false);
+        
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setCornerRadius(dp(10));
+        
+        if (isPrev) {
+            drawable.setColor(Color.parseColor(MIUI_WHITE));
+            drawable.setStroke(dp(1), Color.parseColor(MIUI_BLUE));
+            btn.setTextColor(Color.parseColor(MIUI_BLUE));
+        } else {
+            drawable.setColor(Color.parseColor(MIUI_BLUE));
+            btn.setTextColor(Color.parseColor(MIUI_WHITE));
+        }
+        
+        btn.setBackground(drawable);
+        btn.setPadding(dp(10), dp(5), dp(10), dp(5));
+        btn.setGravity(Gravity.CENTER);
+        
+        return btn;
+    }
+    
+    private android.graphics.drawable.Drawable createTouchFeedback() {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setCornerRadius(dp(16));
+        drawable.setColor(Color.parseColor(MIUI_GRAY_LIGHT));
+        return drawable;
     }
     
     private void showJumpDialog() {
@@ -511,25 +634,6 @@ public class MainActivity extends Activity {
         }
     }
     
-    private void showBarsAnimated() {
-        barsVisible = true;
-        topBar.setVisibility(View.VISIBLE);
-        bottomBar.setVisibility(View.VISIBLE);
-        topBar.animate().alpha(1f).setDuration(200).start();
-        bottomBar.animate().alpha(1f).setDuration(200).start();
-        scheduleHide();
-    }
-    
-    private void hideBarsAnimated() {
-        barsVisible = false;
-        topBar.animate().alpha(0f).setDuration(200).withEndAction(() -> {
-            if (!barsVisible) topBar.setVisibility(View.INVISIBLE);
-        }).start();
-        bottomBar.animate().alpha(0f).setDuration(200).withEndAction(() -> {
-            if (!barsVisible) bottomBar.setVisibility(View.INVISIBLE);
-        }).start();
-    }
-    
     private void scheduleHide() {
         hideHandler.removeCallbacks(hideRunnable);
         hideHandler.postDelayed(hideRunnable, AUTO_HIDE_DELAY);
@@ -537,7 +641,7 @@ public class MainActivity extends Activity {
     
     private void toggleTOC() {
         if (showingTOC) {
-            tocListView.setVisibility(View.GONE);
+            tocCard.setVisibility(View.GONE);
             contentContainer.setVisibility(View.VISIBLE);
             showingTOC = false;
             scheduleHide();
@@ -545,20 +649,52 @@ public class MainActivity extends Activity {
             if (tocItems.isEmpty()) {
                 generateSimpleTOC();
             }
-            ArrayAdapter<String> adapter = new ArrayAdapter<>(this, 
-                android.R.layout.simple_list_item_1, tocItems) {
-                @Override
-                public View getView(int position, View convertView, ViewGroup parent) {
-                    View view = super.getView(position, convertView, parent);
-                    TextView textView = (TextView) view.findViewById(android.R.id.text1);
-                    textView.setTextColor(Color.parseColor(MIUI_TEXT_PRIMARY));
-                    textView.setTextSize(15);
-                    textView.setPadding(dp(20), dp(14), dp(20), dp(14));
-                    return view;
-                }
-            };
-            tocListView.setAdapter(adapter);
-            tocListView.setVisibility(View.VISIBLE);
+            // Build TOC list in CardView style
+            LinearLayout tocContent = new LinearLayout(this);
+            tocContent.setOrientation(LinearLayout.VERTICAL);
+            tocContent.setPadding(dp(20), dp(16), dp(20), dp(16));
+            
+            TextView titleView = new TextView(this);
+            titleView.setText("目录");
+            titleView.setTextSize(20);
+            titleView.setTextColor(Color.parseColor(MIUI_TEXT_PRIMARY));
+            titleView.setTypeface(null, android.graphics.Typeface.BOLD);
+            titleView.setGravity(Gravity.CENTER);
+            titleView.setPadding(0, 0, 0, dp(16));
+            tocContent.addView(titleView);
+            
+            // Add TOC items
+            for (int i = 0; i < tocItems.size(); i++) {
+                final int pageIndex = tocPages[i];
+                
+                TextView item = new TextView(this);
+                item.setText(tocItems.get(i));
+                item.setTextSize(16);
+                item.setTextColor(Color.parseColor(MIUI_TEXT_PRIMARY));
+                item.setPadding(dp(16), dp(14), dp(16), dp(14));
+                item.setClickable(true);
+                item.setFocusable(true);
+                
+                // Ripple background
+                GradientDrawable itemBg = new GradientDrawable();
+                itemBg.setColor(Color.TRANSPARENT);
+                itemBg.setCornerRadius(dp(8));
+                item.setBackground(itemBg);
+                
+                item.setOnClickListener(v -> {
+                    tocCard.setVisibility(View.GONE);
+                    contentContainer.setVisibility(View.VISIBLE);
+                    showingTOC = false;
+                    goToPage(pageIndex);
+                    scheduleHide();
+                });
+                
+                tocContent.addView(item);
+            }
+            
+            tocCard.removeAllViews();
+            tocCard.addView(tocContent);
+            tocCard.setVisibility(View.VISIBLE);
             contentContainer.setVisibility(View.GONE);
             showingTOC = true;
             hideHandler.removeCallbacks(hideRunnable);
