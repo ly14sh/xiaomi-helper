@@ -63,7 +63,7 @@ app/
 ### 方法一：直接下载APK
 
 从Releases页面下载最新版本：
-- 📥 [xiaomi_helper_v1.1.apk](https://github.com/ly14sh/xiaomi-helper/releases/download/v1.1/xiaomi_helper_v1.1.apk)
+- 📥 [xiaomi_helper_v1.2.apk](https://github.com/ly14sh/xiaomi-helper/releases/download/v1.2/xiaomi_helper_v1.2.apk)
 
 ### 方法二：自行构建
 
@@ -98,6 +98,12 @@ app/build/outputs/apk/debug/app-debug.apk
 - `url`: 视频播放地址
 
 ## 版本历史
+
+### v1.2 (2026-03-26)
+- ✨ 新增15个视频页面配置（第9,12,13,15,17,19,21,23,25,29,31,33,35,36,43页）
+- ⚡ 优化PDF渲染性能（异步渲染、分辨率限制）
+- 🎨 新增视频播放按钮（圆形播放图标）
+- 🐛 修复视频配置文件格式问题
 
 ### v1.1 (2026-03-26)
 - ✨ 新增视频播放功能（调用系统播放器）

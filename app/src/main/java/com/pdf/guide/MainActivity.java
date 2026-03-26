@@ -2,6 +2,7 @@ package com.pdf.guide;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -9,6 +10,7 @@ import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.pdf.PdfRenderer;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -27,9 +29,11 @@ import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
-import android.widget.ArrayAdapter;
 import android.widget.Toast;
+import android.widget.ArrayAdapter;
 import androidx.cardview.widget.CardView;
+import org.json.JSONObject;
+import org.json.JSONException;
 import java.io.File;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -62,14 +66,24 @@ public class MainActivity extends Activity {
     private Button nextBtn;
     private ListView tocListView;
     private CardView tocCard;  // CardView for TOC dialog
+    private Button videoBtn;   // Video play button
     
     private boolean showingTOC = false;
     private boolean barsVisible = true;
     private List<String> tocItems = new ArrayList<>();
     private int[] tocPages;
     
+    // Video configuration: 0 = no video, 1 = has video
+    private int[] videoConfig = new int[75];  // 75 pages
+    private String[] videoUrls = new String[75];  // Video URLs for each page
+    
     private Bitmap[] pageCache = new Bitmap[3]; // prev, current, next
     private static final int CACHE_SIZE = 3;
+    
+    // Async rendering
+    private Handler renderHandler = new Handler(Looper.getMainLooper());
+    private java.util.concurrent.ExecutorService renderExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
+    private boolean isRendering = false;
     
     private int screenWidth;
     private int screenHeight;
@@ -109,8 +123,10 @@ public class MainActivity extends Activity {
         barsVisible = true;
         topBar.setVisibility(View.VISIBLE);
         bottomBar.setVisibility(View.VISIBLE);
+        videoBtn.setVisibility(View.VISIBLE);
         topBar.animate().alpha(1f).setDuration(200).start();
         bottomBar.animate().alpha(1f).setDuration(200).start();
+        videoBtn.animate().alpha(1f).setDuration(200).start();
         scheduleHide();
     }
     
@@ -121,6 +137,9 @@ public class MainActivity extends Activity {
         }).start();
         bottomBar.animate().alpha(0f).setDuration(200).withEndAction(() -> {
             if (!barsVisible) bottomBar.setVisibility(View.INVISIBLE);
+        }).start();
+        videoBtn.animate().alpha(0f).setDuration(200).withEndAction(() -> {
+            if (!barsVisible) videoBtn.setVisibility(View.INVISIBLE);
         }).start();
     }
     
@@ -140,6 +159,7 @@ public class MainActivity extends Activity {
         tocListView = createTOCList();
         topBar = createTopBar();
         bottomBar = createBottomBar();
+        videoBtn = createVideoButton();  // Create video button
         
         // Create TOC CardView (same style as jump dialog)
         tocCard = new CardView(this);
@@ -162,8 +182,107 @@ public class MainActivity extends Activity {
         rootLayout.addView(tocCard);  // Add TOC card
         rootLayout.addView(topBar);
         rootLayout.addView(bottomBar);
+        rootLayout.addView(videoBtn);  // Add video button
+        
+        // Initialize video config
+        initVideoConfig();
         
         setContentView(rootLayout);
+    }
+    
+    private void initVideoConfig() {
+        // Initialize all pages to 0 (no video)
+        for (int i = 0; i < 75; i++) {
+            videoConfig[i] = 0;
+            videoUrls[i] = null;
+        }
+        
+        // Load from JSON config file
+        try {
+            InputStream is = getAssets().open("video_config.json");
+            int size = is.available();
+            byte[] buffer = new byte[size];
+            is.read(buffer);
+            is.close();
+            String json = new String(buffer, "UTF-8");
+            
+            JSONObject root = new JSONObject(json);
+            JSONObject pages = root.getJSONObject("pages");
+            
+            // Parse each page config
+            for (int i = 1; i <= 75; i++) {
+                String pageKey = String.valueOf(i);
+                if (pages.has(pageKey)) {
+                    JSONObject pageConfig = pages.getJSONObject(pageKey);
+                    int hasVideo = pageConfig.getInt("hasVideo");
+                    if (hasVideo == 1) {
+                        String url = pageConfig.getString("url");
+                        videoConfig[i - 1] = 1;  // 0-indexed
+                        videoUrls[i - 1] = url;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+    
+    private Button createVideoButton() {
+        Button btn = new Button(this);
+        btn.setText("▶");  // Play icon only
+        btn.setTextSize(20);
+        btn.setTextColor(Color.parseColor(MIUI_WHITE));
+        btn.setAllCaps(false);
+        
+        // Semi-transparent dark background
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setCornerRadius(dp(24));  // Circular
+        drawable.setColor(Color.argb(200, 0, 0, 0));  // Semi-transparent black
+        btn.setBackground(drawable);
+        btn.setPadding(dp(16), dp(8), dp(16), dp(8));
+        
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(dp(56), dp(56));
+        params.gravity = Gravity.BOTTOM | Gravity.RIGHT;
+        params.bottomMargin = dp(32 + 60); // 32dp above bottom bar + bottom bar height
+        params.rightMargin = dp(16);
+        btn.setLayoutParams(params);
+        
+        btn.setOnClickListener(v -> playVideoForCurrentPage());
+        
+        return btn;
+    }
+    
+    private void playVideoForCurrentPage() {
+        if (currentPage >= 0 && currentPage < 75) {
+            if (videoConfig[currentPage] == 1 && videoUrls[currentPage] != null) {
+                // Show video in WebView dialog
+                showVideoDialog(videoUrls[currentPage]);
+            } else {
+                Toast.makeText(this, "本页无视频", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+    
+    private FrameLayout videoContainer;  // For fullscreen video
+    private View customView;
+    private android.webkit.WebChromeClient.CustomViewCallback customViewCallback;
+    private AlertDialog videoDialog;
+    private android.webkit.WebView currentWebView;
+    
+    private void showVideoDialog(String videoUrl) {
+        // The URL is a web page containing video player
+        // Open with browser, user can choose their preferred browser
+        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(videoUrl));
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        
+        // Force chooser to let user select browser
+        Intent chooser = Intent.createChooser(intent, "选择播放器");
+        
+        if (chooser.resolveActivity(getPackageManager()) != null) {
+            startActivity(chooser);
+        } else {
+            Toast.makeText(this, "未找到可用的浏览器", Toast.LENGTH_SHORT).show();
+        }
     }
     
     private FrameLayout createContentContainer() {
@@ -806,17 +925,14 @@ public class MainActivity extends Activity {
         try {
             android.graphics.pdf.PdfRenderer.Page page = pdfRenderer.openPage(index);
             
-            int availableWidth = screenWidth - dp(8);
-            int availableHeight = screenHeight - dp(80);
-            
-            float scaleX = (float) availableWidth / page.getWidth();
-            float scaleY = (float) availableHeight / page.getHeight();
-            float scale = Math.min(scaleX, scaleY);
-            scale = Math.min(scale, 3.0f);
+            // Use lower resolution for better performance
+            int targetWidth = Math.min(screenWidth - dp(8), 1080); // Max 1080px width
+            float scale = (float) targetWidth / page.getWidth();
             
             int width = (int) (page.getWidth() * scale);
             int height = (int) (page.getHeight() * scale);
             
+            // Use ARGB_8888 for proper rendering
             Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(bitmap);
             canvas.drawColor(Color.parseColor(MIUI_WHITE));
@@ -831,37 +947,45 @@ public class MainActivity extends Activity {
         }
     }
     
-    private void updatePageCache() {
-        // Render pages for page turn effect
-        // pageCache[0] = prev page, [1] = current, [2] = next
+    private void updatePageCacheAsync() {
+        if (isRendering) return;
+        isRendering = true;
         
-        // Recycle old bitmaps
-        for (int i = 0; i < CACHE_SIZE; i++) {
-            if (pageCache[i] != null) {
-                // Don't recycle immediately, let GC handle it
+        // Show loading indicator if needed
+        
+        renderExecutor.execute(() -> {
+            // Render current page first
+            final Bitmap current = renderPageSync(currentPage);
+            
+            renderHandler.post(() -> {
+                pageCache[1] = current;
+                pageTurnView.setCurrentPage(current);
+                pageTurnView.invalidate();
+                isRendering = false;
+            });
+            
+            // Render prev and next in background
+            if (currentPage > 0) {
+                final Bitmap prev = renderPageSync(currentPage - 1);
+                renderHandler.post(() -> {
+                    pageCache[0] = prev;
+                    pageTurnView.setPrevPage(prev);
+                });
             }
-        }
-        
-        // Render current page
-        pageCache[1] = renderPageSync(currentPage);
-        
-        // Render prev page
-        if (currentPage > 0) {
-            pageCache[0] = renderPageSync(currentPage - 1);
-        } else {
-            pageCache[0] = null;
-        }
-        
-        // Render next page
-        if (currentPage < pageCount - 1) {
-            pageCache[2] = renderPageSync(currentPage + 1);
-        } else {
-            pageCache[2] = null;
-        }
-        
-        pageTurnView.setCurrentPage(pageCache[1]);
-        pageTurnView.setPrevPage(pageCache[0]);
-        pageTurnView.setNextPage(pageCache[2]);
+            
+            if (currentPage < pageCount - 1) {
+                final Bitmap next = renderPageSync(currentPage + 1);
+                renderHandler.post(() -> {
+                    pageCache[2] = next;
+                    pageTurnView.setNextPage(next);
+                });
+            }
+        });
+    }
+    
+    // Legacy method - kept for compatibility
+    private void updatePageCache() {
+        updatePageCacheAsync();
     }
     
     private void goToPage(int index) {
