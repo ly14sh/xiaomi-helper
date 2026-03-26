@@ -67,10 +67,22 @@ app/
 
 ### 方法二：自行构建
 
+> ⚠️ **注意**：自行构建前需要下载资源文件
+
+**步骤1：下载资源文件**
+
+由于PDF文件较大(61MB)，需要从Releases下载：
+- 📥 [下载 guide.zip](https://github.com/ly14sh/xiaomi-helper/releases/download/v1.02/guide.zip) (位于 v1.02 Release)
+- 将 `guide.zip` 解压后得到 `guide.pdf`，放入 `app/src/main/assets/` 目录
+
+**步骤2：构建项目**
+
 ```bash
 # 克隆项目
 git clone https://github.com/ly14sh/xiaomi-helper.git
 cd xiaomi-helper
+
+# 确保资源文件已放入 app/src/main/assets/guide.pdf
 
 # 构建Debug版本
 ./gradlew assembleDebug
